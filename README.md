@@ -16,4 +16,4 @@
 
 언제든지 수정 될 수 있습니다.  ( 2020.06.14 )
 
-![image](images/observer_architecture1.png)
+![image](srcs/observer_architecture1.png)
