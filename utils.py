@@ -1,24 +1,49 @@
-import re
-from configparser import ConfigParser 
+import logging
+from collections import defaultdict
+from rich.logging import RichHandler
+from rich.traceback import install
 
-price_match = re.compile('.*[^\d]([\d]+,[\d]+)원')
+install()
 
-def config_parser(config_file):
+FORMAT = "%(message)s"
+logging.basicConfig(
+        level=logging.INFO, format=FORMAT, datefmt="[%X]",
+        handlers=[RichHandler()]
+        )
+
+log = logging.getLogger("rich")
+
+def getLogger():
+    global log
+    return log
+
+
+def parsingFile(fpath):
     parser = {}
-    config = ConfigParser()
-    config.read(config_file)
-    for section in config.keys():
-        if section == "DEFAULT": continue
-        parser[section] = {}
-        for section_key in config[section].keys():
-            value = config.get(section, section_key)
-            if value.isdecimal():
-                parser[section][section_key] = int(value)
-                continue
-            parser[section][section_key] = value
+    dup_check = defaultdict(int)
+
+    for line in open(fpath, 'r'):
+        line = line.rstrip('\n')
+        if line == '': continue
+        if line.startswith('['):
+            section = line[1:-1]
+            if section == 'product':
+                dup_check[section] += 1
+                section = section + str(dup_check[section])
+            parser[section] = {}
+            continue
+        if line.startswith('#'):
+            continue
+        key, value = line.split('=') 
+        parser[section][key] = int(value) if value.isdecimal() else value
     return parser
 
+
+def tm2int(text):
+    return int(text.replace(',',''))
+
+
 if __name__ == "__main__":
-    print(config_parser('./config/product.cfg'))
-    print(config_parser('./config/login.cfg'))
+    print(parsingFile('./config/product'))
+    print(parsingFile('./config/login'))
 
