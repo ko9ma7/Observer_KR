@@ -1,13 +1,12 @@
 import sys
-from time import sleep
-import urllib.request as ur
+from urllib import parse
 
 from selenium.common.exceptions import NoSuchElementException
 
 sys.path.append('..')
-from base import BaseCralwer
+from utils import tm2int
+from base import BaseCralwer, tryfindelements
 from urls import TMON_LOGIN_URL, TMON_SEARCH_URL
-from utils import parsingFile, getLogger, tm2int
 
 class Tmon(BaseCralwer):
     def __init__(self): # init, login, delete alert
@@ -17,61 +16,70 @@ class Tmon(BaseCralwer):
 
     def login(self):
         self.log.info("TMON Observer Login...")
-        key = parsingFile('../config/login')['tmon']
-        driver = self.get_driver()
-        driver.get(TMON_LOGIN_URL)
-        driver.find_element_by_id('userid').send_keys(key['id'])
-        driver.find_element_by_id('pwd').send_keys(key['pw'])
-        driver.find_element_by_link_text('로그인').click()
-        driver.get('http://search.tmon.co.kr') 
+        key = self.login_key['tmon']
+        self.get(TMON_LOGIN_URL)
+        self.findE_id('userid').send_keys(key['id'])
+        self.findE_id('pwd').send_keys(key['pw'])
+        self.findE_lt('로그인').click()
+        self.get('http://search.tmon.co.kr') 
+
         # 오늘 하루 보지 않기, 1번 클릭하면 모든 팝업 다 지워짐
-        driver.find_element_by_class_name("expires").click()
+        expires = None
+        try:
+            expires = self.findE_cn("expires")
+            expires.click()
+        except:
+            self.log.info("TMON Observer doesn't click expires.")
+
 
     def search_products(self, prod):
         self.log.info("TMON Observer Searching Products...")
 
         scrolls = 0
-        driver = self.get_driver()
-        driver.get(TMON_SEARCH_URL.format(prod['keyword']))
+        self.get(TMON_SEARCH_URL.format(parse.quote(prod['keyword'])))
 
         self.scrollsTo(200000)
 
         self.products = [] # init
 
-        links = driver.find_elements_by_css_selector('ul > div > div > li > a')
-        prices = driver.find_elements_by_css_selector('span.price > span.sale > i')
+        links = self.findEs_cs('ul > div > div > li > a')
+        prices = self.findEs_cs('span.price > span.sale > i')
+        low_limit = prod['low_price'] // 2
             
         for link, price in zip(links, prices):
             price = tm2int(price.text)
-            if price > prod['high_price'] and price < prod['low_price']:
+
+            # 상품의 최소 가격이 제시값을 넘는 경우
+            if price > prod['high_price']:
+                continue
+            
+            # 상품의 최소 가격이 너무 낮은 경우: 안에 있는 상품들이 사용자의 요구를 충족하지 못할거라고 가정
+            if price < low_limit:
                 continue
 
             self.products.append(link.get_attribute('href'))
-
 
     def check_products(self, prod):
         self.log.info("TMON Observer Checking Products...")
         datas = {'type': 'keyword'}
 
         for link in self.products:
-            products, prices = self.check_tmon_product(link, prod)
-            datas[link] = [products, prices]         
+            titles, prices = self.check_tmon_product(link, prod)
+            datas[link] = [titles, prices]         
     
 
     def check_tmon_product(self, link, prod):
         self.log.info("TMON Observer Checking Urls:{}".format(link))
 
-        driver = self.get_driver()
-        driver.get(link)
+        self.get(link)
 
-        driver_selector = driver.find_elements_by_css_selector
         o_cssSelector = '#_optionScroll > div > div > div > div.dep-sel.dep{} > ul > li'
-        options = driver.find_elements_by_class_name("dep-sel")
+        options = self.findEs_cn("dep-sel")
         o_len = len(options) // 2
 
         if o_len == 0:
-            product = driver.find_element_by_css_selector("ul.prod > li > span.tit").text
-            price = driver.find_element_by_css_selector("div.price_area > div > div > span > strong").text
+            product = self.findE_cs("ul.prod > li > span.tit").text
+            price = self.findE_cs("div.price_area > div > div > span > strong").text
             price = tm2int(price)
             if prod['low_price'] <= price <= prod['high_price']:
                 return [product], [price] 
@@ -80,7 +88,7 @@ class Tmon(BaseCralwer):
         o_cIdx = 0
         o_sList = [0 for _ in range(o_len)]
         options = options[:o_len]
-        o_maxList = [len(driver.find_elements_by_css_selector(o_cssSelector.format(0)))//2]
+        o_maxList = [len(self.findEs_cs(o_cssSelector.format(0)))//2]
 
         # start
         options[0].click()
@@ -91,17 +99,18 @@ class Tmon(BaseCralwer):
             # product choiced
             if o_cIdx == o_len:
                 product_price, product_title = None, None
+                
                 while not (product_price and product_title):
                     try:
-                        product_price = driver.find_element_by_css_selector('div.price_area > div > div > span > strong')
-                        product_title = driver.find_element_by_xpath('//*[@id="_optionScroll"]/div/ul[1]/li/span[1]')
+                        product_price = self.findE_cs('div.price_area > div > div > span > strong')
+                        product_title = self.findE_xp('//*[@id="_optionScroll"]/div/ul[1]/li/span[1]')
                     except NoSuchElementException:
                         self.log.warning("NoSuchElementException:product_price,product_title")
                         last_option = None
                         while not last_option:
                             try:
                                 options[o_cIdx-1].click()
-                                last_option = driver_selector(o_cssSelector.format( \
+                                last_option = self.findEs_cs(o_cssSelector.format( \
                                     o_cIdx-1))[o_sList[o_cIdx-1]-1]
                             except NoSuchElementException:
                                 self.log.warning("NoSuchElementException:last_option")
@@ -112,13 +121,13 @@ class Tmon(BaseCralwer):
                     prices.append(product_price)
 
                 o_cIdx -= 1
-                driver.find_element_by_class_name("del").click()
+                self.findE_cn("del").click()
                 options[o_cIdx].click()
                 continue
             
             # option add maxlen
             if o_sList[o_cIdx] == 0 and o_cIdx != 0:
-                o_maxList.append(len(driver_selector(o_cssSelector.format(o_cIdx)))//2)
+                o_maxList.append(len(self.findEs_cs(o_cssSelector.format(o_cIdx)))//2)
                 
             # option arrived maxlen
             if o_sList[o_cIdx] == o_maxList[o_cIdx]:
@@ -130,24 +139,14 @@ class Tmon(BaseCralwer):
                     continue
                 break
                     
-            n_option = None
-            while not n_option:
-                try:
-                    n_option = driver_selector(o_cssSelector.format(o_cIdx))[o_sList[o_cIdx]]
-                except NoSuchElementException:
-                    pass
-                
-            # option:n plus
-            o_sList[o_cIdx] += 1
-            
-            if n_option.get_attribute('class') == 'soldout':    
-                continue
-                
-            # option:n click
-            n_option.click()
-            
-            # option:n to n + 1
-            o_cIdx += 1
+            with tryfindelements(self.findEs_cs, o_cssSelector.format(o_cIdx)) as n_option:
+                n_option = n_option[o_sList[o_cIdx]] 
+                o_sList[o_cIdx] += 1  # option:n plus
+
+                if n_option.get_attribute("class") == "soldout":
+                    continue
+                n_option.click()
+                o_cIdx += 1  # options: n to n+1
 
         return products, prices
     

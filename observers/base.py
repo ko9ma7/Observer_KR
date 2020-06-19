@@ -37,11 +37,32 @@ class SMTP:
         self.smtp.sendmail(GMAIL_ID, GMAIL_ID, mimetext.as_string())
 
 
+class tryfindelements:
+    def __init__(self, method, command):
+        self.temp = None
+        self.method = method
+        self.command = command
+
+    def __enter__(self):
+        try_limit = 10
+        while not self.temp and try_limit:
+            try:
+                self.temp = self.method(self.command)
+            except:
+                try_limit -= 1
+        return self.temp
+
+    def __exit__(self, type, value, traceback):
+        pass
+
+
 class BaseCralwer:
     def __init__(self):
         self.log = getLogger()
         self._driver_access()
+        self._driver_init()
         self.prod_key = parsingFile('../config/product')
+        self.login_key = parsingFile('../config/login')
 
     def __del__(self):
         self.driver.quit()
@@ -49,7 +70,7 @@ class BaseCralwer:
     def _driver_access(self):
         try:
             op = webdriver.ChromeOptions()
-            op.add_argument('headless')
+            # op.add_argument('headless')
             self.driver = webdriver.Chrome('/home/gunmo/public/chromedriver', 
                     options=op)
             self.driver.implicitly_wait(1)
@@ -57,16 +78,31 @@ class BaseCralwer:
         except:
             self.log.error('ChromeDriver Access Failed')
 
+    def _driver_init(self):
+        self.findE_id = self.driver.find_element_by_id
+        self.findE_xp = self.driver.find_element_by_xpath
+        self.findE_lt = self.driver.find_element_by_link_text
+        self.findE_cn = self.driver.find_element_by_class_name
+        self.findE_cs = self.driver.find_element_by_css_selector
+
+        self.findEs_cn = self.driver.find_elements_by_class_name
+        self.findEs_cs = self.driver.find_elements_by_css_selector
+
+    def get(self, url):
+        while not self.driver.current_url.startswith(url):
+            self.driver.get(url)
+            sleep(0.5)
+        
+
     def scrollsTo(self, scroll_limit):
         scrolls = 0
         while scrolls < scroll_limit:
             scrolls += 10000
             self.driver.execute_script("window.scrollTo(0, {})".format(scrolls))
             sleep(0.3)
-            
-        
-    def get_driver(self):
-        return self.driver
+
+    def sendGetDatas(self):
+        raise NotImplementedError
 
     def login(self):
         raise NotImplementedError
